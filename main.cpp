@@ -2,9 +2,10 @@
 #include <string>
 #include <limits>
 #include <vector>
+#include <fstream>
 
 using namespace std;
-//класс пользователя
+/** @brief Базовый класс пользователя */
 class User{
     protected:
     int id;
@@ -29,7 +30,7 @@ class User{
         cout << "id: " << id << ", имя: " << name;
     }
 };
-
+/** @brief Студент */
 class Student : public User{
     private:
     string group;
@@ -52,7 +53,7 @@ class Student : public User{
     }
 
 };
-
+/** @brief Преподаватель */
 class Teacher : public User{
     public:
     Teacher(int id_, const string& name_) : User(id_, name_){}
@@ -65,11 +66,12 @@ class Teacher : public User{
         User::printInfo();
     }
 };
-//типы задание
+
 enum class WorkType {
     Report, //доклад
     Lab
 };
+/** @brief Работа */
 class Work{
     protected:
     int id;
@@ -94,7 +96,7 @@ class Work{
         cout << "работа #" << id << " \"" << title << "\"";
     }
 };
-//доклад
+/** @brief Доклад */
 class ReportWork : public Work{
     public:
     ReportWork(int id_, const string& title_) : Work(id_, title_){}
@@ -111,7 +113,7 @@ class ReportWork : public Work{
         Work::printInfo();
     }
 };
-//лаба
+/** @brief Лабораторная */
 class LabWork : public Work{
     public:
     LabWork(int id_, const string& title_) : Work(id_, title_){}
@@ -128,7 +130,7 @@ class LabWork : public Work{
     }
 };
 
-//фабрика создания работ
+/** @brief Фабрика работ */
 class WorkFactory {
     public:
     //создаем объект нужного типа 
@@ -145,7 +147,7 @@ class WorkFactory {
     }
 };
 
-//задания на предмете
+/** @brief Слот задания */
 struct AssignmentSlot{
     Work* work;
     Student* reservedBy; //студент который записался
@@ -186,7 +188,7 @@ struct AssignmentSlot{
 };
 
 
-//дисциплина
+/** @brief Предмет */
 class Subject {
     private:
     int id;
@@ -209,10 +211,24 @@ class Subject {
         return owner;
     }
     //инвайт студента на предмет
-    void addStudent(Student* student){
-        //ДОБАВИТЬ ПРОВЕРКУ НА ДУБЛИКАТЫ
+    void addStudent(Student* student) {
+        if (!student) {
+            cout << "ошибка: нет студента\n";
+            return;
+        }
+    
+        // Проверка на дубликаты
+        for (auto* s : students) {
+            if (s == student) {
+                cout << "студент уже записан на предмет\n";
+                return;
+            }
+        }
+    
         students.push_back(student);
+        cout << "студент добавлен на предмет\n";
     }
+    
     //добавить задание
     void addWork(WorkType type, int id, const string& title){
         Work* w = WorkFactory::createWork(type, id, title); //связь с фабрикой
@@ -353,9 +369,15 @@ class Subject {
         cout << "задание с id " << workId << " не найдено\n";
         return false;
     }
+    ~Subject() {
+        for (auto& slot : assigments) {
+            delete slot.work;   // освобождаем каждую работу
+        }
+    }
+    
 };
 
-// вся система целиком: хранит всех студентов, преподов и предметы
+/** @brief Университетская система */
 class UniversitySystem {
     private:
         // списки указателей на объекты
@@ -765,22 +787,92 @@ class UniversitySystem {
             cout << "предмет не найден\n";
         }
     
-        // простая "выгрузка итогов" — пока просто печать в консоль
+        //выгрузка итогов
         void exportSubjectReport() const {
             int subjId;
             cout << "введите id предмета для отчёта: ";
             cin >> subjId;
-    
+        
             for (auto* s : subjects) {
                 if (s->getId() == subjId) {
+        
+                    // Показываем отчёт в консоли
                     cout << "==== отчёт по предмету \"" << s->getName() << "\" ====\n";
                     s->printFull();
                     cout << "==== конец отчёта ====\n";
+        
+                    string filename = "report_subject_" + to_string(subjId) + ".txt";
+        
+                    ofstream out(filename);
+                    if (!out) {
+                        cout << "ошибка: не удалось открыть файл для записи\n";
+                        return;
+                    }
+        
+                    // 4) Записываем данные
+                    out << "ОТЧЁТ ПО ПРЕДМЕТУ\n";
+                    out << "Название: " << s->getName() << "\n";
+                    out << "ID предмета: " << s->getId() << "\n";
+        
+                    if (s->getOwner())
+                        out << "Преподаватель: " << s->getOwner()->getName() << "\n";
+        
+                    out << "----------------------------------------\n";
+        
+                    // Студенты
+                    out << "\nСтуденты (" << s->getStudentsList().size() << "):\n";
+                    for (auto* st : s->getStudentsList()) {
+                        if (st)
+                            out << " - " << st->getName()
+                                << " (группа: " << st->getGroup() << ")\n";
+                    }
+        
+                    // Задания
+                    out << "\nЗадания:\n";
+                    for (const auto& slot : s->getAssignmentsList()) {
+                        if (!slot.work) continue;
+        
+                        out << " * " << slot.work->getTypeName()
+                            << " \"" << slot.work->getTitle() << "\"";
+        
+                        if (!slot.reservedBy) {
+                            out << " → свободно\n";
+                        } else {
+                            out << " → студент: " << slot.reservedBy->getName();
+        
+                            if (!slot.submitted && !slot.approved)
+                                out << " | статус: записан\n";
+                            else if (slot.submitted && !slot.approved)
+                                out << " | статус: сдано, ждёт проверки\n";
+                            else if (slot.approved)
+                                out << " | оценка: " << slot.grade << "\n";
+                        }
+                    }
+        
+                    out << "\n--- конец отчёта ---\n";
+                    out.close();
+        
+                    cout << "отчёт сохранён в файл: " << filename << "\n";
                     return;
                 }
             }
             cout << "предмет не найден\n";
         }
+        
+        ~UniversitySystem() {
+            // удаляем студентов
+            for (auto* s : students)
+                delete s;
+        
+            // удаляем преподавателей
+            for (auto* t : teachers)
+                delete t;
+        
+            // удаляем предметы 
+            for (auto* sub : subjects)
+                delete sub;
+        }
+        
     };
     
     void printMenu() {
@@ -807,7 +899,7 @@ class UniversitySystem {
     }
     
     int main() {
-        setlocale(LC_ALL, "ru_RU.utf8"); // можно убрать, если будут проблемы
+        setlocale(LC_ALL, "ru_RU.utf8");
         UniversitySystem sys;
     
         int choice = -1;
